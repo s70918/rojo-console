@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<% include ../partials/head %>
+</head>
+<style type="text/css">
+#currencySetting table th{
+	white-space: nowrap;
+}
+#currencySetting table td:first-child{
+	white-space: nowrap;
+	text-align: left;
+}
+#currencySetting table td,#currencySetting table th{
+	text-align: center;
+	vertical-align: middle;
+}
+#exportStep2,#exportStep3,#exportStep4,#downloader{
+	display: none;
+}
+</style>
+<body>
+<header>
+	<% include ../partials/header %>
+</header>
+<main class="container-fluid">
+	<div class="row">
+		<div class="col-lg-2">
+			<div id="chartSelector" class="panel panel-default">
+				<div class="panel-heading">選擇圖表</div>
+				<div class="list-group">
+					<a href="#" class="list-group-item">過去12個月營收</a>
+				</div>
+				<div class="panel-footer"></div>
+			</div>
+		</div>
+	</div>
+</main>
+<footer>
+	<% include ../partials/footer %>
+</footer>
+<script type="text/javascript">
+require.config({
+	baseUrl : '../js/min/',
+	shim : {
+		"bootstrap" : { "deps" :['jquery'] }
+	},
+	text: 'require.text.min.js',
+	paths : {
+		'jquery' : 'jquery-1.11.2.min',
+		'bootstrap' : 'bootstrap.min',
+		'moment' : 'moment.min',
+		'daterangepicker' : 'daterangepicker.min',
+		'underscore' : 'underscore.min'
+	}
+});
+require(['underscore','jquery','excel-builder','daterangepicker','bootstrap'], function( _ , $) {
+	var data = <%= JSON.stringify(data) %>;
+});
+</script>
+</body>
+</html>

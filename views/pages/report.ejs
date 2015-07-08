@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<% include ../partials/head %>
+</head>
+<style type="text/css">
+#currencySetting table th{
+	white-space: nowrap;
+}
+#currencySetting table td:first-child{
+	white-space: nowrap;
+	text-align: left;
+}
+#currencySetting table td,#currencySetting table th{
+	text-align: center;
+	vertical-align: middle;
+}
+#exportStep2,#exportStep3,#exportStep4,#downloader{
+	display: none;
+}
+</style>
+<body>
+<header>
+	<% include ../partials/header %>
+</header>
+<main class="container-fluid">
+	<div class="row">
+		<div id="exportStep1" class="col-lg-2">
+			<form id="reqForm">
+			<div id="reportLoad" class="panel panel-default">
+				<div class="panel-heading">讀取報表資料</div>
+				<div class="panel-body">
+					<div class="form-group">
+						<label for="appID">AppID</label>
+						<!--<input id="appID" name="id" type="text" class="form-control" placeholder="Enter ID">-->
+						<select id="appID" name="id" class="form-control">
+							<option selected>請選擇客戶ID</option>
+							<% apps.forEach(function(apps) { %>
+							<option value="<%= apps.AppID %>"><%= apps.AppName %>(<%= apps.AppID %>)</option>
+							<% }); %>
+						</select>
+					</div>
+					<div class="form-group">
+						<label for="dateRange">Date</label>
+						<input id="dateRange" name="daterange" type="text" class="form-control" value="" placeholder="選擇交易時間區間" />
+					</div>
+					<div class="form-group">
+						<label for="rateDate">匯入台灣銀行匯率表</label>
+						<input id="rateDate" name="rateDate" type="text" class="form-control" value="" placeholder="選擇掛牌日期" />
+					</div>
+				</div>
+				<div class="panel-footer">
+				<button id="submit" type="submit" class="btn btn-default">開始</button> 
+				</div>
+			</div>
+			</form>
+		</div>
+		<div id="exportStep2" class="col-lg-3">
+			<div id="reportSetting" class="panel panel-default">
+				<div class="panel-heading">報表輸出設定</div>
+				<div class="panel-body"></div>
+				<table class="table table-bordered small"></table>
+				<div class="panel-footer"><button id="settingPrvBtn" type="submit" class="btn btn-default">上一步</button> <button id="settingBtn" type="submit" class="btn btn-default pull-right">下一步</button></div>
+			</div>
+		</div>
+		<div id="exportStep3" class="col-lg-5">
+			<div id="currencySetting" class="panel panel-default">
+				<div class="panel-heading">結款幣別轉換</div>
+				<div class="panel-body"></div>
+				<table class="table table-bordered small form-inline"></table>
+				<div class="panel-footer"><button id="convertPrvBtn" type="submit" class="btn btn-default">上一步</button> <button id="convertBtn" type="submit" class="btn btn-default pull-right">轉換幣別並下一步</button></div>
+			</div>
+		</div>
+		<div id="exportStep4" class="col-md-4">
+			<div id="deductionSetting" class="panel panel-default">
+				<div class="panel-heading">扣除項目設定</div>
+				<div class="panel-body"><button id="addDeduItem" type="button" class="btn btn-default">加入扣除項目</button></div>
+				<table class="table table-bordered small form-inline">
+					<tr>
+						<th>扣除對象</th>
+						<th>項目名稱</th>
+						<th>扣除方式</th>
+						<th>金額</th>
+						<th></th>
+					</tr>
+				</table>
+				<div class="panel-footer"><button id="deductionPrvBtn" type="submit" class="btn btn-default">上一步</button> <div class=" pull-right"><button id="deductionBtn" type="submit" class="btn btn-default">完成</button> <a id="downloader" class="btn btn-success" href="#">下載Excel檔案</a></div></div>
+			</div>
+		</div>
+	</div>
+</main>
+<footer>
+	<% include ../partials/footer %>
+</footer>
+<script type="text/javascript">
+require.config({
+	baseUrl : '../js/min/',
+	shim : {
+		"bootstrap" : { "deps" :['jquery'] }
+	},
+	text: 'require.text.min.js',
+	paths : {
+		'jquery' : 'jquery-1.11.2.min',
+		'bootstrap' : 'bootstrap.min',
+		'moment' : 'moment.min',
+		'daterangepicker' : 'daterangepicker.min',
+		'underscore' : 'underscore.min',
+		'JSZip' : 'jszip.min',
+		'excel-builder' : 'excel-builder.min'
+	}
+});
+require(['underscore','jquery','excel-builder','moment','daterangepicker','bootstrap'], function( _ , $ , EB , moment) {
+	// OPTION AND DATA
+	var	transationData,conditionData,
+		paymentList = [],
+		currClass = [],
+		rateData,rateDate;
+	var tData,cData,paymentSave,
+		paymentRemove,deductionSave;
+	// MAIN FUNCTION
+	function formatFloat(num, pos){
+		var size = Math.pow(10, pos);
+		return Math.round(num * size) / size;
+	}
+	function preparePanel(originalData,conditionData){
+		tData = originalData;
+		cData = conditionData;
+		console.log(cData);
+		var temp = [];
+		// PROCESSING RAW DATA
+		_.each(tData,function(i){
+			i[6] = i[6].toUpperCase();
+			i[6] = i[6].trim();
+		});
+		_.each(cData,function(i){
+			i[2] = i[2].toUpperCase();
+		});
+		// TOTAL REVENUE STATICTICS TABLE
+		// GENERATE PAYMENT LIST
+		paymentList = []
+		for(var y in tData){
+			temp.push([tData[y][6],tData[y][7],tData[y][9]].toString());
+		}
+		for(var x in temp){
+			if( paymentList.indexOf(temp[x]) == -1 ){
+				paymentList.push(temp[x]);
+			}
+		}
+		for(var e in paymentList){
+			paymentList[e] = paymentList[e].split(",");
+			paymentList[e][0] = paymentList[e][0].trim();
+			paymentList[e][0] = paymentList[e][0].toUpperCase();
+		}
+		for(var i = 0 ;i < paymentList.length;i++){
+			for(var j = 0; j < cData.length;j++){
+				if(cData[j].indexOf(paymentList[i][0]) != -1){
+					paymentList[i].push(cData[j][3]);
+				}
+			}
+			if(paymentList[i][3] == undefined || paymentList[i][3].length == 0){
+				paymentList[i].push(0);
+			}
+			var revenueSum = 0;
+			for(var h = 0;h < tData.length;h++){
+				if(tData[h][6] == paymentList[i][0]){
+					revenueSum += tData[h][8];
+				}
+			}
+			paymentList[i].push(revenueSum,paymentList[i][2],"1");
+			paymentList[i].push(paymentList[i][6]*paymentList[i][4]);
+		}
+		console.log(paymentList);
+		paymentInterface(paymentList);
+	}
+	function paymentListEditor(callback){
+		paymentSave = {indexNum : [],data : []};
+		paymentRemove = {indexNum : [],data : []};
+		$(".exportSetting").each(function(index){
+			if($(this).is(":checked") == true){
+				paymentSave.indexNum.push($(this).val());
+			}else{
+				paymentRemove.indexNum.push($(this).val());
+			}
+		});
+		for(var i in paymentList){
+			if(paymentSave.indexNum.indexOf(i) != -1){
+				paymentSave.data.push(paymentList[i]);
+			}else{
+				paymentRemove.data.push(paymentList[i]);
+			}
+		}
+		console.log(paymentSave,paymentRemove);
+		callback(paymentSave.data);
+	}
+	function paymentInterface(paymentData){
+		$("#exportStep3,#exportStep4").hide();
+		$("#exportStep2").show();
+		var paymentHTML,panelBodyHTML;
+		// EXPORT SETUP PANEL ELEMENT SHOW
+		paymentHTML = '<table class="table table-bordered small"><tr>';
+		paymentHTML += '<th></th><th>收款管道</th><th>收款幣別</th><th>條件</th><th>營收</th>';
+		for(var i in paymentData){
+			paymentHTML += '<tr>';
+				paymentHTML += '<td><input type="checkbox" class="exportSetting" value="' + i + '" checked></td>';
+				paymentHTML += '<td>' + paymentData[i][1] + '</td>';
+				paymentHTML += '<td>' + paymentData[i][2] + '</td>';
+				paymentHTML += '<td>' + paymentData[i][3] + '</td>';
+				paymentHTML += '<td>' + paymentData[i][4] + '</td>';
+			paymentHTML += '</tr>';
+		}
+		paymentHTML += '</table>';
+		panelBodyHTML = '<p>請在下方設定針對此廠商要輸出的收款管道</p>';
+		$("#reportSetting > .table").html(paymentHTML);
+		$("#reportSetting > .panel-body").html(panelBodyHTML);
+	}
+	function currencyCalc(callback){
+		var calcMethodArray = [];
+		$(".currencyRate").each(function(index){
+			var calcMethod = parseInt($("input[name=method" + (index + 1) + "]:checked").val());
+			calcMethodArray[index] = calcMethod;
+			paymentSave.data[index][6] = $(this).val();
+			if( calcMethod === 1){
+				paymentSave.data[index][7] = paymentSave.data[index][4] * parseFloat($(this).val());
+			}else{
+				paymentSave.data[index][7] = paymentSave.data[index][4] / parseFloat($(this).val());
+			}
+		});
+		$(".currencyName").each(function(index){
+			paymentSave.data[index][5] = $(this).val();
+		});
+		for(var i = 0;i < paymentSave.data.length;i++){
+			paymentSave.data[i][8] = calcMethodArray[i];
+		}
+		/******************************************
+
+			"paymentSave.data" array 說明
+			0 = paymentID,
+			1 = paymentName,
+			2 = 收款幣別,
+			3 = 拆份比,
+			4 = 營收,
+			5 = 結款幣別,
+			6 = 匯率,
+			7 = 匯兌後營收,
+			8 = 匯兌計算方式，乘或除
+
+		******************************************/
+		console.log(calcMethodArray,paymentSave.data);
+		callback(paymentSave.data,calcMethodArray);
+		$("#exportStep4").show();
+	}
+	function convertInterface(paymentData,calcMethodArray){
+		$("#exportStep3").show();
+		var currencyHTML,currencyBodyHTML;
+		var globalCurrency = ["TWD","USD","HKD","JPY","THB","EUR","MYR","CNY"];
+		if(calcMethodArray == undefined) var calcMethodArray = [];
+		currencyHTML += '<tr><th class="col-md-2">收款管道</th><th>收款幣別</th><th><span class="glyphicon glyphicon-transfer" aria-hidden="true"></span> 結款幣別</th><th>匯率</th><th>轉換後營收</th></tr>';
+		for(var i = 0;i < paymentData.length;i++){
+			currencyHTML += '<tr>';
+			currencyHTML += '<td>' + paymentData[i][1] + '</td>';
+			currencyHTML += '<td>' + paymentData[i][2] + '</td>';
+			currencyHTML += '<td><select class="form-control input-sm currencyName">';
+			if(paymentData[i][5] == paymentData[i][2]){
+				currencyHTML += '<option value="' + paymentData[i][2] + '" selected>不轉換</option>';
+				for(var x = 0;x < globalCurrency.length;x++){
+					currencyHTML += '<option value="' + globalCurrency[x] + '">' + globalCurrency[x] + '</option>';
+				}
+			}else{
+				currencyHTML += '<option value="' + paymentData[i][2] + '">不轉換</option>';
+				for(var x = 0;x < globalCurrency.length;x++){
+					if(globalCurrency[x] == paymentData[i][5]){
+						currencyHTML += '<option value="' + globalCurrency[x] + '" selected>' + globalCurrency[x] + '</option>';
+					}else{
+						currencyHTML += '<option value="' + globalCurrency[x] + '">' + globalCurrency[x] + '</option>';
+					}
+				}
+			}
+			currencyHTML += '</select></td>';
+			currencyHTML += '<td>';
+			currencyHTML += '<div class="input-group"><input type="text" class="form-control input-sm currencyRate" value="' + paymentData[i][6] + '" size="5"><span class="input-group-btn" data-toggle="buttons">';
+			if( calcMethodArray[i] == 1 || calcMethodArray[i] == undefined){
+			currencyHTML += '<label class="btn btn-sm btn-default active"><input type="radio" class="method" name="method' + (i+1) + '" value="1" autocomplete="off" checked>乘</label>';
+			currencyHTML += '<label class="btn btn-sm btn-default"><input type="radio" class="method" name="method' + (i+1) + '" value="2" autocomplete="off">除</label></span></div> ';
+			}else{
+			currencyHTML += '<label class="btn btn-sm btn-default"><input type="radio" class="method" name="method' + (i+1) + '" value="1" autocomplete="off">乘</label>';
+			currencyHTML += '<label class="btn btn-sm btn-default active"><input type="radio" class="method" name="method' + (i+1) + '" value="2" autocomplete="off" checked>除</label></span></div> ';
+			}
+			currencyHTML += '</td>';
+			currencyHTML += '<td>' + formatFloat(paymentData[i][7],2) + '</td>';
+			currencyHTML += '</tr>';
+		}
+
+		$("#currencySetting > .table").html(currencyHTML);
+		$("#currencySetting > .panel-body").html(currencyBodyHTML);
+	}
+	function addDeducItemInterface(paymentData,rowindex){
+		var temp = [];
+		var deducTargetArray = [];
+		var rowIndex = $("#deductionSetting > .table tr").length;
+		var itemHTML;
+		var currClass = [];
+		var settleCurrClass = [];
+		var subRevenueTotal = 0;
+		// 產出收款別Array
+		for(var i = 0;i < paymentData.length;i++){
+			temp.push(paymentData[i][2]);
+		}
+		for(var i = 0;i < temp.length;i++){
+			if( currClass.indexOf(temp[i]) == -1 ){
+				currClass.push(temp[i]);
+			}
+		}
+		// 產出結款別Array
+		temp = [];
+		for(var i = 0;i < paymentData.length;i++){
+			temp.push(paymentData[i][5]);
+		}
+		for(var i = 0;i < temp.length;i++){
+			if( settleCurrClass.indexOf(temp[i]) == -1 ){
+				settleCurrClass.push(temp[i]);
+			}
+		}
+		// 產出扣款對象Array
+		for(var i = 0;i < paymentData.length;i++){
+			temp = paymentData[i][2] + "," + paymentData[i][5] + "";
+			if(deducTargetArray.indexOf(temp) === -1){
+				deducTargetArray.push(temp);
+			}
+		}
+		for(var i = 0;i < deducTargetArray.length;i++){
+			deducTargetArray[i] = deducTargetArray[i].split(",");
+		}
+		for(var i = 0;i < currClass.length;i++){
+			for(var z = 0;z < settleCurrClass.length;z++){
+				subRevenueTotal = 0;
+				for(var y = 0;y < paymentData.length;y++){
+					if(paymentData[y][2] == currClass[i] && paymentData[y][5] == settleCurrClass[z]){
+						subRevenueTotal += paymentData[y][4] * paymentData[y][3];
+					}
+				}
+				for(var x = 0;x < deducTargetArray.length;x++){
+					if(deducTargetArray[x][0] == currClass[i] && deducTargetArray[x][1] == settleCurrClass[z]){
+						deducTargetArray[x].push(subRevenueTotal);
+					}
+				}
+			}
+		}
+		console.log(deducTargetArray);
+		// 開始輸出HTML
+		itemHTML += '<tr>';
+		itemHTML += '<td><select class="form-control input-sm deducTarget">';
+		for(var i = 0;i < deducTargetArray.length;i++){
+			itemHTML += '<option value="' + i + ',' + deducTargetArray[i][0] + ',' + deducTargetArray[i][1] + '">' + deducTargetArray[i][0] + " → " + deducTargetArray[i][1] + '</option>';
+		}
+		itemHTML += '</select>';
+		itemHTML += '</td>';
+		itemHTML += '<td><input type="text" class="form-control input-sm deducName" size="10"></td>';
+		itemHTML += '<td><input type="text" class="form-control input-sm deducAmount" data-rowindex="' + rowIndex + '" size="6"> <select class="form-control input-sm deducMethod">';
+		itemHTML += '<option value="number">整數</option><option value="percent">百份比</option>'
+		itemHTML += '</td></select>';
+		itemHTML += '<td><input type="text" class="form-control input-sm deducRenderAmount" size="7" readonly></td>';
+		itemHTML += '<td><button type="button" class="btn btn-sm btn-default deleteDeduItem">刪除</button></td>';
+		itemHTML += '</tr>';
+		$("#deductionSetting > .table").append(itemHTML);
+		$(".deleteDeduItem").click(function(){
+			$(this).parent().parent().remove();
+			$("#deductionSetting > .table tr input.deducAmount").each(function(index){
+				$(this).attr("data-rowindex",index + 1);
+			});
+		});
+		$(".deducAmount").keyup(function(event){
+			var deducMethod = $(this).next(".deducMethod").val();
+			var thisValue = $(this).val();
+			var trIndex = $(this).data("rowindex");
+			var targetValue = $("#deductionSetting > .table tr").eq(trIndex).find(".deducTarget").val();
+			var targetIndex = targetValue.split(",",1);
+			var targetAmount = deducTargetArray[targetIndex][2];
+			if(deducMethod === "number"){
+				$("#deductionSetting > .table tr").eq(trIndex).find(".deducRenderAmount").val(thisValue);
+			}else{
+				$("#deductionSetting > .table tr").eq(trIndex).find(".deducRenderAmount").val(targetAmount * (thisValue / 100));
+			}
+			//console.log($(this),deducMethod,thisValue,trIndex,targetAmount);
+		});
+		$(".deducTarget").change(function(){
+			var thisRowDom = $(this).parent().parent();
+			var thisRowIndex = thisRowDom.find(".deducAmount").data("rowindex");
+			var deducMethod = thisRowDom.find(".deducMethod").val();
+			var thisValue = thisRowDom.find(".deducAmount").val();
+			var targetIndex = $(this).val().split(",",1);
+			var targetAmount = deducTargetArray[targetIndex][2];
+			if(deducMethod === "number"){
+				$("#deductionSetting > .table tr").eq(thisRowIndex).find(".deducRenderAmount").val(thisValue);
+			}else{
+				$("#deductionSetting > .table tr").eq(thisRowIndex).find(".deducRenderAmount").val(targetAmount * (thisValue / 100));
+			}
+		});
+	}
+	function deducAndStart(){
+		deductionSave = [];
+		$("#deductionSetting > .table tr").each(function(index){
+			if(index != 0){
+				var deducTarget = $(this).find(".deducTarget").val().split(",");
+				var deducName = $(this).find(".deducName").val();
+				var deducMethod = [$(this).find(".deducAmount").val(),$(this).find(".deducMethod").val()]
+				var deducAmount = $(this).find(".deducRenderAmount").val();
+				var rowData = {
+					"receipt" : deducTarget[1],
+					"settle" : deducTarget[2],
+					"deductName" : deducName,
+					"deductMethod" : deducMethod,
+					"deductAmount" : deducAmount
+				};
+				deductionSave.push(rowData);
+			}
+		});
+		console.log(deductionSave);
+		buildExcel(tData,cData,paymentSave.data,rateData,rateDate,deductionSave);
+	}
+	function buildExcel(transData,conditionData,paymentList,rateData,rateDate,substractList){
+		// INITIAL
+		var artistWorkbook = EB.createWorkbook();
+		var albumList = artistWorkbook.createWorksheet({name:'營收報表'});
+		var stylesheet = artistWorkbook.getStyleSheet();
+		var viewData = [];
+		var comName = transData[0][1];
+		// SETUP STYLE
+		var importantFormatter = stylesheet.createFormat({
+			font : {
+				bold : true,
+				size : 10,
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "center" },
+			fill : {
+				type : 'pattern',
+				patternType : 'solid',
+				fgColor : 'FF99CCFF'
+			}
+		});
+		var leftAlignColumn = stylesheet.createFormat({
+			font : {
+				size : 9,
+				fontName : "微軟正黑體"
+			}
+		});
+		var centerAlignColumn = stylesheet.createFormat({
+			font : {
+				size : 9,
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "center" }
+		});
+		var revenueTotalFormatter = stylesheet.createFormat({
+			font : {
+				bold : true,
+				size : 9,
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "center" }
+		});
+		var revenueTotalRedFormatter = stylesheet.createFormat({
+			font : {
+				bold : true,
+				size : 9,
+				color : 'FFFF0000',
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "center" }
+		});
+		var rateTitleFormatter = stylesheet.createFormat({
+			font : {
+				bold : true,
+				size : 10,
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "left" }
+		});
+		var rateDataTitle = stylesheet.createFormat({
+			font : {
+				bold : true,
+				size : 10,
+				fontName : "微軟正黑體"
+			},
+			alignment : { horizontal: "center" }
+		});
+		// FILTER EVERY TRANSDATA BY PAYMENTLIST AND CREAT VIEWDATA
+		_.each(transData,function(m){
+			for(var i = 0 ; i < paymentList.length ; i++){
+				if(m[6] == paymentList[i][0]){
+					viewData.push([
+						{value : m[1],metadata : {style : centerAlignColumn.id}},
+						{value : m[2],metadata : {style : leftAlignColumn.id}},
+						{value : m[3],metadata : {style : leftAlignColumn.id}},
+						{value : m[4],metadata : {style : leftAlignColumn.id}},
+						{value : m[5],metadata : {style : leftAlignColumn.id}},
+						{value : m[7],metadata : {style : centerAlignColumn.id}},
+						{value : m[8],metadata : {style : centerAlignColumn.id}},
+						{value : m[9],metadata : {style : centerAlignColumn.id}},
+						{value : m[10],metadata : {style : centerAlignColumn.id}},
+						{value : m[11],metadata : {style : leftAlignColumn.id}}
+					]);
+				}				
+			}
+		});
+		// SETUP COLUMNS
+		var columns = [
+			{width : 10},
+			{width : 15},
+			{width : 15},
+			{width : 8},
+			{width : 8},
+			{width : 15},
+			{width : 8},
+			{width : 8},
+			{width : 8},
+			{width : 22}
+		];
+		for(var a in columns){
+			columns[a].width += 0.62;
+		}
+		// CURRENCY RECEIVABLES CLASSIFICATION
+		var temp = [];
+		var currClass = [];
+		var settleCurrClass = [];
+		for(var y in paymentList){
+			temp.push(paymentList[y][2]);
+		}
+		for(var x in temp){
+			if( currClass.indexOf(temp[x]) == -1 ){
+				currClass.push(temp[x]);
+			}
+		}
+		temp = [];
+		for(var y in paymentList){
+			temp.push(paymentList[y][5]);
+		}
+		for(var x in temp){
+			if( settleCurrClass.indexOf(temp[x]) == -1 ){
+				settleCurrClass.push(temp[x]);
+			}
+		}
+		console.log(currClass,settleCurrClass);
+		// INDIVIDUALLY TRANSATION TABLE
+		var worksheetLeftTable = [
+			[
+				{value : "App Name",metadata : {style : importantFormatter.id}},
+				{value : "Merchant Trans ID",metadata : {style : importantFormatter.id}},
+				{value : "ROCKPAY Trans ID",metadata : {style : importantFormatter.id}},
+				{value : "Memo1",metadata : {style : importantFormatter.id}},
+				{value : "Memo2",metadata : {style : importantFormatter.id}},
+				{value : "Payment Channel",metadata : {style : importantFormatter.id}},
+				{value : "Amount",metadata : {style : importantFormatter.id}},
+				{value : "Currency",metadata : {style : importantFormatter.id}},
+				{value : "Credits",metadata : {style : importantFormatter.id}},
+				{value : "Transaction Creation Date",metadata : {style : importantFormatter.id}}
+			]
+		].concat(viewData);
+
+		// GENERATE TABLE START
+		var worksheetRightTable = [];
+		var subRevenueTable = [];
+		var subRevenueItemCount = 0;
+		var revenueExchangeList = [];
+		// 開始執行小計項目表格
+		for(var i = 0;i < currClass.length;i++){
+			var revenueHeader = [
+				[
+					{value : "付費管道",metadata : {style : importantFormatter.id}},
+					{value : "拆分比",metadata : {style : importantFormatter.id}},
+					{value : "營收",metadata : {style : importantFormatter.id}},
+					{value : "收款幣別",metadata : {style : importantFormatter.id}},
+					{value : "結款幣別",metadata : {style : importantFormatter.id}},
+					{value : "拆分後營收",metadata : {style : importantFormatter.id}}
+				]
+			];
+			var revenueBody = [];
+			for(var z = 0;z < settleCurrClass.length;z++){
+				var subRevenueBody = [];
+				var substractBody = [];
+				var subRevenueTotal = 0;
+				var subRevenueExecutable = 0;
+				var subStractFooter = [];
+				var subRevenueFooter;
+				var exchangeRate = 1;
+				var calcMethod = 1;
+				_.each(paymentList,function(a){
+					// 如果與迴圈組合相同的收款別與結款別，則開始執行
+					if(a[2] == currClass[i] && a[5] == settleCurrClass[z]){
+						subRevenueBody.push([
+							{value : a[1],metadata : {style : leftAlignColumn.id}},
+							{value : a[3],metadata : {style : centerAlignColumn.id}},
+							{value : a[4],metadata : {style : centerAlignColumn.id}},
+							{value : a[2],metadata : {style : centerAlignColumn.id}},
+							{value : a[5],metadata : {style : centerAlignColumn.id}},
+							{value : a[4]*a[3], metadata: {style : centerAlignColumn.id}}
+						]);
+						subRevenueTotal += a[4]*a[3];
+						exchangeRate = a[6];
+						calcMethod = a[8];
+						subRevenueExecutable += 1;
+					}
+				});
+				// 如果在交易列表中有此迴圈組合者，則開始執行
+				if(subRevenueExecutable != 0){
+					// 小計開始
+					var subRevenueTotalFinal = subRevenueTotal;
+					// 執行遍歷扣除項目
+					for(var x = 0;x < substractList.length;x++){
+						if(substractList[x].receipt == currClass[i] && substractList[x].settle == settleCurrClass[z]){
+							if(substractList[x].deductMethod[1] == "number"){
+								var substractAmount = substractList[x].deductMethod[0];
+							}else{
+								var substractAmount = subRevenueTotal * (substractList[x].deductMethod[0] / 100);
+							}
+							subStractFooter.push([
+								{value : substractList[x].deductName,metadata : {style : leftAlignColumn.id}},
+								null,
+								null,
+								null,
+								{value : "扣除金額",metadata : {style : centerAlignColumn.id}},
+								{value : substractAmount,metadata : {style : centerAlignColumn.id}}
+							]);
+							subRevenueTotalFinal -= substractAmount;
+						}
+					}
+					subRevenueItemCount += 1;
+					subRevenueFooter = subStractFooter.concat([
+						[{value : "第" + subRevenueItemCount + "項 小計金額(" + currClass[i] + ")",metadata : {style : revenueTotalFormatter.id}},null,null,null,null,{value : subRevenueTotalFinal,metadata : {style : centerAlignColumn.id}}]
+					]);
+
+					// 將每個小計項目轉換幣別
+					var revenueConverted = 0;
+					if( calcMethod === 1){
+						revenueConverted = subRevenueTotalFinal * exchangeRate;
+					}else{
+						revenueConverted = subRevenueTotalFinal / exchangeRate;
+					}
+					// 產出統計項目列表陣列
+					revenueExchangeList.push([
+						"第" + subRevenueItemCount + "項 小計金額(" + currClass[i] + ")",
+						currClass[i],
+						settleCurrClass[z],
+						exchangeRate,
+						subRevenueTotalFinal,
+						revenueConverted
+					]);
+					// 將subRevenueBody 合拼到 revenueBody
+					if(substractBody.length === 0 || substractBody === null){
+						revenueBody = revenueBody.concat(subRevenueBody,subRevenueFooter);
+					}else{
+						revenueBody = revenueBody.concat(subRevenueBody,substractBody,subRevenueFooter);
+					}
+				}
+			}
+			var blankRow = [null];
+			subRevenueTable = subRevenueTable.concat(revenueHeader.concat(revenueBody,blankRow));
+		}
+		// 開始執行統計總表表格
+		var revenueExchangeTable = [];
+		var revenueExchangeHeader = [
+			[
+				{value : "統計項目",metadata : {style : importantFormatter.id}},
+				{value : "收款幣別",metadata : {style : importantFormatter.id}},
+				{value : "結款幣別",metadata : {style : importantFormatter.id}},
+				{value : "匯率",metadata : {style : importantFormatter.id}},
+				{value : "金額",metadata : {style : importantFormatter.id}},
+				{value : "轉換後金額",metadata : {style : importantFormatter.id}}
+			]
+		];
+		var revenueExchangeBody = [];
+		var revenueeExchangeExecutable = 0;
+		for(var i = 0;i < settleCurrClass.length;i++){
+			var revenueTotal = 0;
+			_.each(revenueExchangeList,function(a){
+				if(a[2] == settleCurrClass[i]){
+					revenueExchangeBody.push([
+						{value : a[0],metadata : {style : leftAlignColumn.id}},
+						{value : a[1],metadata : {style : centerAlignColumn.id}},
+						{value : a[2],metadata : {style : centerAlignColumn.id}},
+						{value : a[3],metadata : {style : centerAlignColumn.id}},
+						{value : a[4],metadata : {style : centerAlignColumn.id}},
+						{value : a[5],metadata : {style : centerAlignColumn.id}}
+					]);
+					revenueTotal += a[5];
+					revenueeExchangeExecutable +=1;
+				}
+			});
+			if(revenueeExchangeExecutable != 0){
+				var revenueExchangeFooter = [
+					[{value : settleCurrClass[i] + " 統計總金額",metadata : {style : revenueTotalRedFormatter.id}},null,null,null,null,{value : Math.round(revenueTotal),metadata : {style : revenueTotalRedFormatter.id}}]
+				];
+				revenueExchangeBody = revenueExchangeBody.concat(revenueExchangeFooter);
+			}
+		}
+		revenueExchangeTable = revenueExchangeHeader.concat(revenueExchangeBody,[null]);
+		// 合拼小計與統計表格
+		worksheetRightTable = worksheetRightTable.concat(revenueExchangeTable,subRevenueTable);
+
+		console.log(worksheetRightTable);
+		// EXCHANGE RATE TABLE
+		if( rateData != 0 ){
+			var rateArray = [];
+			_.each(rateData,function(i){
+				rateArray.push([
+					{value : i[0],metadata : {style : rateTitleFormatter.id}},
+					{value : i[1],metadata : {style : centerAlignColumn.id}},
+					{value : i[2],metadata : {style : centerAlignColumn.id}},
+					{value : i[3],metadata : {style : centerAlignColumn.id}},
+					{value : i[4],metadata : {style : centerAlignColumn.id}},
+				]);
+			})
+			var rateFooter = [
+				[{value : "匯率來源：http://rate.bot.com.tw/Pages/UIP004/UIP004INQ1.aspx",metadata : {style : rateTitleFormatter.id}}]
+			]
+			var worksheetRateTable = [
+				[{value : "台灣銀行利率匯率/歷史匯率收盤價",metadata : {style : rateTitleFormatter.id}}],
+				[{value : "掛牌時間：" + rateDate,metadata : {style : rateTitleFormatter.id}}],
+				[
+					{value : "幣別／匯率",metadata : {style : rateDataTitle.id}},
+					{value : "現金買入",metadata : {style : rateDataTitle.id}},
+					{value : "現金賣出",metadata : {style : rateDataTitle.id}},
+					{value : "即期買入",metadata : {style : rateDataTitle.id}},
+					{value : "即期賣出",metadata : {style : rateDataTitle.id}}
+				]
+			].concat(rateArray,rateFooter);
+			worksheetRightTable = worksheetRightTable.concat(worksheetRateTable);
+		}
+		// FINAL COMBINE TABLE
+		var worksheetFinal = [];
+		if(worksheetLeftTable.length >= worksheetRightTable.length){
+			var finelRowNum = worksheetLeftTable.length;
+		}else{
+			var finelRowNum = worksheetRightTable.length;
+		}
+		for(var i = 0 ;i < finelRowNum;i++){
+			if(worksheetLeftTable[i] != undefined){
+				if(worksheetRightTable[i] == undefined){
+					worksheetRightTable[i] = null;
+				}
+				worksheetFinal[i] = worksheetLeftTable[i].concat(null,worksheetRightTable[i]);
+			}else{
+				worksheetLeftTable[i] = [null,null,null,null,null,null,null,null,null,null];
+				worksheetFinal[i] = worksheetLeftTable[i].concat(null,worksheetRightTable[i]);
+			}
+		}
+		// SETUP BEFORE EXCEL EXPORT
+		albumList.setData(worksheetFinal);
+		albumList.setColumns(columns);
+		// 合拼儲存格
+		var mergeCellArray = [];
+		var mergeCellStart = "L";
+		var mergeCellNumEnd = 0;
+		var mergeRowNum = 0;
+		for(var i = 0;i < worksheetRightTable.length;i++){
+			mergeCellNumEnd = _.lastIndexOf(worksheetRightTable[i],null);
+			if(mergeCellNumEnd === 3){
+				mergeRowNum = i+1;
+				mergeCellArray.push([mergeCellStart + mergeRowNum,"O" + mergeRowNum]);
+			}else if(mergeCellNumEnd === 4){
+				mergeRowNum = i+1;
+				mergeCellArray.push([mergeCellStart + mergeRowNum,"P" + mergeRowNum]);
+			}
+		}
+		for(var i = 0;i < mergeCellArray.length;i++){
+			albumList.mergeCells(mergeCellArray[i][0],mergeCellArray[i][1]);			
+		}
+		
+		artistWorkbook.addWorksheet(albumList);
+		// CREATE FILES
+		var data = EB.createFile(artistWorkbook);
+		setDownloadFile(data,comName);
+	}
+	function setDownloadFile(xlsFileData,fileName){
+		// DOWNLOAD FILE SETUP
+		$("#downloader").show();
+		$("#downloader").attr({
+			download : fileName + ".xlsx",
+			href: "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64," + xlsFileData
+		});
+	}
+	$(function(){
+		//var appList = <%- JSON.stringify(apps) %>;
+		var DRPOption = {
+			locale: {
+				applyLabel: '確定',
+				cancelLabel: '取消',
+				fromLabel: 'From',
+				toLabel: 'To',
+				customRangeLabel: '自訂',
+				daysOfWeek: ['日', '一', '二', '三', '四', '五','六'],
+				monthNames: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+			}			
+		};
+		$('#dateRange').daterangepicker({
+			format: 'YYYY-MM-DD',
+			maxDate : moment(),
+			showWeekNumbers : true,
+			locale : DRPOption.locale
+		});
+		$('#dateRange').on('apply.daterangepicker', function(ev, picker) {
+			console.log(picker.startDate.format('YYYY-MM-DD'));
+			console.log(picker.endDate.format('YYYY-MM-DD'));
+		});
+		$('#rateDate').daterangepicker({
+			singleDatePicker: true,
+			maxDate : moment(),
+			format: 'YYYY-MM-DD',
+			locale : DRPOption.locale
+		});
+		// STEP 1
+		$("#reqForm").submit(function(){
+			$("#downloader").hide();
+			var appid = $("#appID").val(),
+				date = $("#dateRange").val();
+			if ( appid.length == 0 || date.length == 0) {
+				console.log("error");
+			}else{
+				$.ajax({
+					url : "./report/api",
+					type : "POST",
+					dateType : "json",
+					data : {id:appid,date:date},
+					success : function(data){
+						// TRANSATION JSON TO CSV
+						var jsonCSV = function(data){
+							var array = typeof data != 'object' ? JSON.parse(data) : data;
+							var csv = [];
+							for (var i = 0; i < array.length; i++) {
+								var row = [];
+								for(var x in array[i]){
+									row.push(array[i][x]);
+								}
+								csv.push(row);
+							}
+							return csv;
+						};
+						transationData = jsonCSV(data[0]);
+						conditionData = jsonCSV(data[1]);
+						var reqDate = $("#rateDate").val();
+						if(moment(reqDate).isValid() == true){
+							reqDate = reqDate.split("-");
+							$.ajax({
+								url : "./xchangerate/api",
+								type : "POST",
+								dateType : "json",
+								data : {year:reqDate[0],month:reqDate[1],day:reqDate[2]},
+								success : function(data){
+									rateData = data.data;
+									rateDate = data.date.slice(11);
+									preparePanel(transationData,conditionData);
+								},
+								error : function(err){
+									console.log(err);
+								}
+							});
+						}else{
+							rateData = 0;
+							preparePanel(transationData,conditionData);
+						}
+
+					},
+					error : function(err){
+						console.log(err);
+					}
+				});
+			}
+			return false;
+		});
+		// STEP 2
+		$("#settingPrvBtn").click(function(){
+			$("#exportStep2").hide();
+		});
+		$("#settingBtn").click(function(){
+			paymentListEditor(convertInterface);
+			$("#exportStep2").hide();
+		});
+		// STEP 3
+		$("#convertPrvBtn").click(function(){
+			$("#exportStep2").show();
+			$("#exportStep3").hide();
+		});
+		$("#convertBtn").click(function(){
+			currencyCalc(convertInterface);
+			$("#exportStep3").hide();
+		});
+		// STEP 4
+		$("#addDeduItem").click(function(){
+			addDeducItemInterface(paymentSave.data);
+		});
+		$("#deductionPrvBtn").click(function(){
+			$("#exportStep4").hide();
+			$("#exportStep3").show();
+		});
+		$("#deductionBtn").click(function(){
+			deducAndStart();
+		});
+	});
+});
+</script>
+</body>
+</html>
